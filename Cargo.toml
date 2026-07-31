@@ -1,0 +1,28 @@
+[package]
+name = "babomemo"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "A mouse-first terminal memo pad for each directory"
+repository = "https://github.com/smturtle2/babomemo"
+readme = "README.md"
+rust-version = "1.88"
+publish = false
+
+[dependencies]
+arboard = { version = "3.6.1", default-features = false }
+atomic-write-file = "0.3.0"
+crossterm = "0.29.0"
+directories = "6.0.0"
+fluent-bundle = "0.16.0"
+fluent-langneg = "0.13.1"
+ratatui = { version = "0.30.0", default-features = false, features = ["crossterm"] }
+rust-embed = "8.12.0"
+sys-locale = "0.3.2"
+unicode-segmentation = "1.12.0"
+unicode-width = "0.2.0"
+unic-langid = "0.9.6"
+
+[profile.release]
+lto = "thin"
+strip = true
