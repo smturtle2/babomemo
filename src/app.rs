@@ -22,14 +22,13 @@ use crate::{
     constants::{
         AUTOSAVE_DELAY, BORDER_BOTTOM_LEFT, BORDER_BOTTOM_RIGHT, BORDER_HORIZONTAL,
         BORDER_TOP_LEFT, BORDER_TOP_RIGHT, BORDER_VERTICAL, BUTTON_HORIZONTAL_PADDING,
-        CONFIRM_HEIGHT, CONFIRM_MIN_WIDTH, CONFIRM_WIDTH_PADDING, DELETION_UNDO_LIMIT, MAX_HEIGHT,
-        MIN_HEIGHT, MIN_RENDERED_NOTE_WIDTH, MIN_TERMINAL_HEIGHT, MIN_TERMINAL_WIDTH,
+        CONFIRM_HEIGHT, CONFIRM_MIN_WIDTH, CONFIRM_WIDTH_PADDING, MAX_HEIGHT, MIN_HEIGHT,
+        MIN_RENDERED_NOTE_WIDTH, MIN_TERMINAL_HEIGHT, MIN_TERMINAL_WIDTH,
         MODAL_ACTION_BOTTOM_INSET, MODAL_CONTENT_INSET, MODAL_MARGIN, NOTE_BORDER_HEIGHT,
         NOTE_BORDER_THICKNESS, NOTE_BORDER_WIDTH, NOTE_GAP, NOTE_HEADER_INSET, NOTE_PADDING,
-        NOTE_SEQUENCE_OFFSET, SCROLL_STEP, SCROLLBAR_THUMB, SCROLLBAR_TRACK, SCROLLBAR_WIDTH,
-        SETTINGS_CONTROL_RIGHT_INSET, SETTINGS_CONTROL_SPACING, SETTINGS_HEIGHT,
-        SETTINGS_HEIGHT_ROW, SETTINGS_LABEL_RIGHT_INSET, SETTINGS_TITLE_ROW, SETTINGS_WIDTH,
-        SIZE_STEP, STATUS_HEIGHT, TAB_SPACES, TOOLBAR_HEIGHT,
+        NOTE_SEQUENCE_OFFSET, SCROLL_STEP, SETTINGS_CONTROL_RIGHT_INSET, SETTINGS_CONTROL_SPACING,
+        SETTINGS_HEIGHT, SETTINGS_HEIGHT_ROW, SETTINGS_LABEL_RIGHT_INSET, SETTINGS_TITLE_ROW,
+        SETTINGS_WIDTH, SIZE_STEP, STATUS_HEIGHT, TAB_SPACES, TOOLBAR_HEIGHT,
     },
     document::Document,
     editor::{Editor, VisualRow, cursor_row_column, display_grapheme, display_width, visual_rows},
@@ -42,10 +41,6 @@ use crate::{
 enum Action {
     Add,
     Settings,
-    Restore,
-    DeleteAll,
-    Quit,
-    Clear(usize),
     Delete(usize),
     Confirm,
     Cancel,
@@ -55,20 +50,16 @@ enum Action {
 }
 
 enum Pending {
-    Clear(usize),
     Delete(usize),
-    DeleteAll,
 }
 
-enum Deleted {
-    Clear { index: usize, text: String },
-    Note { index: usize, text: String },
-    All { notes: Vec<String> },
+enum AddScroll {
+    Minimal,
+    Bottom,
 }
 
 enum Drag {
     Text { note: usize, anchor: usize },
-    Scrollbar,
 }
 
 struct Target {
@@ -120,6 +111,7 @@ pub struct App {
     i18n: I18n,
     focused: Option<usize>,
     scroll: u32,
+    reveal_added_note: Option<usize>,
     total_height: u32,
     viewport: Rect,
     layouts: Vec<NoteLayout>,
@@ -127,7 +119,6 @@ pub struct App {
     drag: Option<Drag>,
     pending: Option<Pending>,
     settings_open: bool,
-    deleted: Vec<Deleted>,
     dirty_since: Option<Instant>,
     save_error: Option<String>,
     transient_error: Option<String>,
@@ -151,6 +142,7 @@ impl App {
             i18n,
             focused: None,
             scroll: 0,
+            reveal_added_note: None,
             total_height: 0,
             viewport: Rect::default(),
             layouts: Vec::new(),
@@ -158,7 +150,6 @@ impl App {
             drag: None,
             pending: None,
             settings_open: false,
-            deleted: Vec::new(),
             dirty_since: None,
             save_error: None,
             transient_error: config_error,
@@ -239,22 +230,6 @@ impl App {
             area.width,
             TerminalStyle::error(),
         );
-        let label = self.i18n.text("button-quit");
-        let width = button_width(&label).min(area.width);
-        let x = area.right().saturating_sub(width);
-        if let Some(rect) = draw_button(
-            buffer,
-            x,
-            area.bottom().saturating_sub(1),
-            area.right(),
-            &label,
-            TerminalStyle::button(),
-        ) {
-            self.targets.push(Target {
-                area: rect,
-                action: Action::Quit,
-            });
-        }
     }
 
     fn render_toolbar(&mut self, buffer: &mut Buffer, area: Rect) {
@@ -263,70 +238,26 @@ impl App {
             TerminalStyle::toolbar(),
         );
 
-        let quit_label = self.i18n.text("button-quit");
-        let quit_width = button_width(&quit_label).min(area.width);
-        let quit_x = area.right().saturating_sub(quit_width);
+        let label = self.i18n.text("button-settings");
+        let width = button_width(&label).min(area.width);
+        let x = area.right().saturating_sub(width);
         if let Some(rect) = draw_button(
             buffer,
-            quit_x,
+            x,
             area.y,
             area.right(),
-            &quit_label,
+            &label,
             TerminalStyle::button(),
         ) {
             self.targets.push(Target {
                 area: rect,
-                action: Action::Quit,
+                action: Action::Settings,
             });
-        }
-
-        let items = [
-            ("button-add", Action::Add, true, false),
-            ("button-settings", Action::Settings, true, false),
-            (
-                "button-restore",
-                Action::Restore,
-                !self.deleted.is_empty(),
-                false,
-            ),
-            (
-                "button-delete-all",
-                Action::DeleteAll,
-                !self.editors.is_empty(),
-                true,
-            ),
-        ];
-        let mut x = area.x;
-        let mut y = area.y;
-        for (id, action, enabled, destructive) in items {
-            let label = self.i18n.text(id);
-            let width = button_width(&label);
-            let row_right = if y == area.y { quit_x } else { area.right() };
-            if x.saturating_add(width) > row_right {
-                y = y.saturating_add(1);
-                x = area.x;
-            }
-            if y >= area.y + TOOLBAR_HEIGHT || x.saturating_add(width) > area.right() {
-                continue;
-            }
-            let style = if !enabled {
-                TerminalStyle::disabled()
-            } else if destructive {
-                TerminalStyle::destructive_button()
-            } else {
-                TerminalStyle::button()
-            };
-            if let Some(rect) = draw_button(buffer, x, y, area.right(), &label, style) {
-                if enabled {
-                    self.targets.push(Target { area: rect, action });
-                }
-                x = rect.right().saturating_add(1);
-            }
         }
     }
 
     fn render_notes(&mut self, buffer: &mut Buffer) -> Option<Position> {
-        let usable_width = self.viewport.width.saturating_sub(SCROLLBAR_WIDTH).max(1);
+        let usable_width = self.viewport.width.max(1);
         let outer_width = usable_width;
         let text_width = outer_width
             .saturating_sub(NOTE_BORDER_WIDTH + NOTE_PADDING.saturating_mul(2))
@@ -355,6 +286,9 @@ impl App {
         let add_top = top;
         self.total_height = add_top.saturating_add(1);
         self.clamp_scroll();
+        if let Some(index) = self.reveal_added_note.take() {
+            self.reveal_note(index);
+        }
 
         let mut cursor = None;
         for index in 0..self.editors.len() {
@@ -395,7 +329,6 @@ impl App {
                 });
             }
         }
-        self.render_scrollbar(buffer);
         cursor
     }
 
@@ -420,7 +353,7 @@ impl App {
                 layout.width.saturating_sub(NOTE_HEADER_INSET),
                 border_style,
             );
-            self.render_note_buttons(buffer, index, layout, y);
+            self.render_note_button(buffer, index, layout, y);
         }
         if let Some(y) = self.screen_y(bottom) {
             draw_horizontal_border(buffer, layout.x, y, layout.width, false, border_style);
@@ -483,35 +416,19 @@ impl App {
         }
     }
 
-    fn render_note_buttons(
+    fn render_note_button(
         &mut self,
         buffer: &mut Buffer,
         index: usize,
         layout: NoteLayout,
         y: u16,
     ) {
-        let clear = self.i18n.text("button-clear");
         let delete = self.i18n.text("button-delete");
-        let clear_width = button_width(&clear);
         let delete_width = button_width(&delete);
         let right = layout.x + layout.width.saturating_sub(1);
         let delete_x = right.saturating_sub(delete_width);
-        let clear_x = delete_x.saturating_sub(1 + clear_width);
-        if clear_x <= layout.x.saturating_add(NOTE_HEADER_INSET) {
+        if delete_x <= layout.x.saturating_add(NOTE_HEADER_INSET) {
             return;
-        }
-        if let Some(rect) = draw_button(
-            buffer,
-            clear_x,
-            y,
-            delete_x.saturating_sub(1),
-            &clear,
-            TerminalStyle::destructive_button(),
-        ) {
-            self.targets.push(Target {
-                area: rect,
-                action: Action::Clear(index),
-            });
         }
         if let Some(rect) = draw_button(
             buffer,
@@ -525,37 +442,6 @@ impl App {
                 area: rect,
                 action: Action::Delete(index),
             });
-        }
-    }
-
-    fn render_scrollbar(&self, buffer: &mut Buffer) {
-        if self.viewport.height == 0 {
-            return;
-        }
-        let x = self.viewport.right().saturating_sub(1);
-        for y in self.viewport.y..self.viewport.bottom() {
-            put_cell(buffer, x, y, SCROLLBAR_TRACK, TerminalStyle::scrollbar());
-        }
-        if self.total_height <= u32::from(self.viewport.height) {
-            return;
-        }
-        let height = u32::from(self.viewport.height);
-        let thumb_height = ((height * height) / self.total_height).max(1).min(height);
-        let travel = height.saturating_sub(thumb_height);
-        let max_scroll = self.max_scroll();
-        let thumb_start = self
-            .scroll
-            .saturating_mul(travel)
-            .checked_div(max_scroll)
-            .unwrap_or(0);
-        for offset in 0..thumb_height {
-            put_cell(
-                buffer,
-                x,
-                self.viewport.y + (thumb_start + offset) as u16,
-                SCROLLBAR_THUMB,
-                TerminalStyle::scrollbar_thumb(),
-            );
         }
     }
 
@@ -591,17 +477,9 @@ impl App {
         let Some(pending) = self.pending.as_ref() else {
             return;
         };
-        let id = match pending {
-            Pending::Clear(index) => {
-                args.set("number", (*index + 1) as i64);
-                "confirm-clear"
-            }
-            Pending::Delete(index) => {
-                args.set("number", (*index + 1) as i64);
-                "confirm-delete"
-            }
-            Pending::DeleteAll => "confirm-delete-all",
-        };
+        let Pending::Delete(index) = pending;
+        args.set("number", (*index + 1) as i64);
+        let id = "confirm-delete";
         let message = self.i18n.format(id, Some(&args));
         let modal = centered(
             area,
@@ -749,16 +627,32 @@ impl App {
     }
 
     fn handle_key(&mut self, key: KeyEvent) {
-        if !matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat)
-            || self.pending.is_some()
-            || self.settings_open
+        if !matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) {
+            return;
+        }
+        let control = key.modifiers.contains(KeyModifiers::CONTROL);
+        if key.kind == KeyEventKind::Press
+            && control
+            && let KeyCode::Char(character) = key.code
         {
+            match character.to_ascii_lowercase() {
+                'd' => {
+                    self.request_quit();
+                    return;
+                }
+                'n' if self.pending.is_none() && !self.settings_open => {
+                    self.add_note(AddScroll::Minimal);
+                    return;
+                }
+                _ => {}
+            }
+        }
+        if self.pending.is_some() || self.settings_open {
             return;
         }
         let Some(index) = self.focused.filter(|index| *index < self.editors.len()) else {
             return;
         };
-        let control = key.modifiers.contains(KeyModifiers::CONTROL);
         let shift = key.modifiers.contains(KeyModifiers::SHIFT);
         let alt = key.modifiers.contains(KeyModifiers::ALT);
         let text_width = self
@@ -768,9 +662,7 @@ impl App {
             .unwrap_or(
                 self.viewport
                     .width
-                    .saturating_sub(
-                        SCROLLBAR_WIDTH + NOTE_BORDER_WIDTH + NOTE_PADDING.saturating_mul(2),
-                    )
+                    .saturating_sub(NOTE_BORDER_WIDTH + NOTE_PADDING.saturating_mul(2))
                     .max(1),
             );
         let rows = visual_rows(self.editors[index].text(), text_width);
@@ -894,13 +786,6 @@ impl App {
         if self.pending.is_some() || self.settings_open {
             return;
         }
-        if self.viewport.contains(position)
-            && mouse.column == self.viewport.right().saturating_sub(1)
-        {
-            self.drag = Some(Drag::Scrollbar);
-            self.set_scroll_from_mouse(mouse.row);
-            return;
-        }
         if !self.viewport.contains(position) {
             return;
         }
@@ -938,7 +823,6 @@ impl App {
                 let cursor = self.hit_test_clamped(note, layout, column, row);
                 self.editors[note].set_selection(anchor, cursor);
             }
-            Drag::Scrollbar => self.set_scroll_from_mouse(row),
         }
     }
 
@@ -969,14 +853,7 @@ impl App {
                 }
                 Action::SettingsDone => {
                     self.settings_open = false;
-                    if let Err(error) = self.config.save() {
-                        let mut args = FluentArgs::new();
-                        args.set("error", error.to_string());
-                        self.transient_error =
-                            Some(self.i18n.format("status-config-error", Some(&args)));
-                    } else {
-                        self.transient_error = None;
-                    }
+                    self.save_config();
                 }
                 _ => {}
             }
@@ -984,25 +861,8 @@ impl App {
         }
 
         match action {
-            Action::Add => {
-                self.editors.push(Editor::new(String::new()));
-                let index = self.editors.len() - 1;
-                self.focused = Some(index);
-                self.mark_dirty();
-                self.scroll = u32::MAX;
-            }
+            Action::Add => self.add_note(AddScroll::Bottom),
             Action::Settings => self.settings_open = true,
-            Action::Restore => self.restore_deleted(),
-            Action::DeleteAll => self.pending = Some(Pending::DeleteAll),
-            Action::Quit => {
-                if self.dirty_since.is_some() {
-                    self.save();
-                }
-                if self.dirty_since.is_none() {
-                    self.quit = true;
-                }
-            }
-            Action::Clear(index) => self.pending = Some(Pending::Clear(index)),
             Action::Delete(index) => self.pending = Some(Pending::Delete(index)),
             _ => {}
         }
@@ -1013,17 +873,8 @@ impl App {
             return;
         };
         match pending {
-            Pending::Clear(index) if index < self.editors.len() => {
-                let text = self.editors[index].text().to_owned();
-                if self.editors[index].clear() {
-                    self.push_deleted(Deleted::Clear { index, text });
-                    self.focused = Some(index);
-                    self.mark_dirty();
-                }
-            }
             Pending::Delete(index) if index < self.editors.len() => {
-                let text = self.editors.remove(index).text().to_owned();
-                self.push_deleted(Deleted::Note { index, text });
+                self.editors.remove(index);
                 self.focused = if self.editors.is_empty() {
                     None
                 } else {
@@ -1031,52 +882,7 @@ impl App {
                 };
                 self.mark_dirty();
             }
-            Pending::DeleteAll if !self.editors.is_empty() => {
-                let notes = self
-                    .editors
-                    .drain(..)
-                    .map(|editor| editor.text().to_owned())
-                    .collect();
-                self.push_deleted(Deleted::All { notes });
-                self.focused = None;
-                self.scroll = 0;
-                self.mark_dirty();
-            }
             _ => {}
-        }
-    }
-
-    fn restore_deleted(&mut self) {
-        let Some(deleted) = self.deleted.pop() else {
-            return;
-        };
-        match deleted {
-            Deleted::Clear { index, text } => {
-                if index < self.editors.len() {
-                    self.editors[index] = Editor::new(text);
-                    self.focused = Some(index);
-                } else {
-                    self.editors.push(Editor::new(text));
-                    self.focused = Some(self.editors.len() - 1);
-                }
-            }
-            Deleted::Note { index, text } => {
-                let index = index.min(self.editors.len());
-                self.editors.insert(index, Editor::new(text));
-                self.focused = Some(index);
-            }
-            Deleted::All { notes } => {
-                self.editors = notes.into_iter().map(Editor::new).collect();
-                self.focused = (!self.editors.is_empty()).then_some(0);
-            }
-        }
-        self.mark_dirty();
-    }
-
-    fn push_deleted(&mut self, deleted: Deleted) {
-        self.deleted.push(deleted);
-        if self.deleted.len() > DELETION_UNDO_LIMIT {
-            self.deleted.remove(0);
         }
     }
 
@@ -1143,6 +949,45 @@ impl App {
         }
     }
 
+    fn save_config(&mut self) -> bool {
+        match self.config.save() {
+            Ok(()) => {
+                self.transient_error = None;
+                true
+            }
+            Err(error) => {
+                let mut args = FluentArgs::new();
+                args.set("error", error.to_string());
+                self.transient_error = Some(self.i18n.format("status-config-error", Some(&args)));
+                false
+            }
+        }
+    }
+
+    fn add_note(&mut self, scroll: AddScroll) {
+        self.editors.push(Editor::new(String::new()));
+        let index = self.editors.len() - 1;
+        self.focused = Some(index);
+        self.mark_dirty();
+        match scroll {
+            AddScroll::Minimal => self.reveal_added_note = Some(index),
+            AddScroll::Bottom => self.scroll = u32::MAX,
+        }
+    }
+
+    fn request_quit(&mut self) {
+        if self.dirty_since.is_some() {
+            self.save();
+        }
+        if self.dirty_since.is_some() {
+            return;
+        }
+        if self.settings_open && !self.save_config() {
+            return;
+        }
+        self.quit = true;
+    }
+
     fn document(&self) -> Document {
         Document {
             notes: self
@@ -1172,6 +1017,26 @@ impl App {
                 self.scroll = cursor_y
                     .saturating_add(1)
                     .saturating_sub(u32::from(self.viewport.height));
+            }
+        }
+        self.clamp_scroll();
+    }
+
+    fn reveal_note(&mut self, index: usize) {
+        let Some(layout) = self.layouts.get(index).copied() else {
+            return;
+        };
+        let viewport_height = u32::from(self.viewport.height);
+        if viewport_height == 0 {
+            return;
+        }
+        if layout.height() > viewport_height || layout.top < self.scroll {
+            self.scroll = layout.top;
+        } else {
+            let note_bottom = layout.top.saturating_add(layout.height());
+            let viewport_bottom = self.scroll.saturating_add(viewport_height);
+            if note_bottom > viewport_bottom {
+                self.scroll = note_bottom.saturating_sub(viewport_height);
             }
         }
         self.clamp_scroll();
@@ -1228,21 +1093,12 @@ impl App {
         Some(self.viewport.y + relative as u16)
     }
 
-    fn set_scroll_from_mouse(&mut self, row: u16) {
-        if self.viewport.height == 0 {
-            return;
-        }
-        let relative = u32::from(
-            row.saturating_sub(self.viewport.y)
-                .min(self.viewport.height.saturating_sub(1)),
-        );
-        let denominator = u32::from(self.viewport.height.saturating_sub(1)).max(1);
-        self.scroll = self.max_scroll().saturating_mul(relative) / denominator;
-    }
-
     fn max_scroll(&self) -> u32 {
-        self.total_height
-            .saturating_sub(u32::from(self.viewport.height))
+        let content_limit = self
+            .total_height
+            .saturating_sub(u32::from(self.viewport.height));
+        let last_note_limit = self.layouts.last().map(|layout| layout.top).unwrap_or(0);
+        content_limit.max(last_note_limit)
     }
 
     fn clamp_scroll(&mut self) {

@@ -77,17 +77,6 @@ impl Editor {
         self.preferred_column = None;
     }
 
-    pub fn clear(&mut self) -> bool {
-        if self.text.is_empty() {
-            return false;
-        }
-        self.record();
-        self.text.clear();
-        self.cursor = 0;
-        self.anchor = None;
-        true
-    }
-
     pub fn insert(&mut self, value: &str) -> bool {
         if value.is_empty() {
             return false;

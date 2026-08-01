@@ -25,7 +25,6 @@ pub const NOTE_PADDING: u16 = 1;
 pub const MIN_TERMINAL_WIDTH: u16 = 20;
 pub const MIN_TERMINAL_HEIGHT: u16 = 6;
 pub const BUTTON_HORIZONTAL_PADDING: u16 = 1;
-pub const SCROLLBAR_WIDTH: u16 = 1;
 pub const SCROLL_STEP: u32 = 3;
 pub const MIN_RENDERED_NOTE_WIDTH: u16 = 3;
 pub const NOTE_SEQUENCE_OFFSET: u16 = 2;
@@ -49,12 +48,8 @@ pub const BORDER_TOP_LEFT: &str = "┌";
 pub const BORDER_TOP_RIGHT: &str = "┐";
 pub const BORDER_BOTTOM_LEFT: &str = "└";
 pub const BORDER_BOTTOM_RIGHT: &str = "┘";
-pub const SCROLLBAR_TRACK: &str = "│";
-pub const SCROLLBAR_THUMB: &str = "┃";
-
 pub const AUTOSAVE_DELAY: Duration = Duration::from_millis(300);
 pub const IDLE_POLL: Duration = Duration::from_millis(100);
 
 pub const UNDO_LIMIT: usize = 256;
-pub const DELETION_UNDO_LIMIT: usize = 64;
 pub const TAB_SPACES: &str = "    ";

@@ -50,12 +50,4 @@ impl TerminalStyle {
     pub fn modal() -> Style {
         Style::default()
     }
-
-    pub fn scrollbar() -> Style {
-        Style::default().add_modifier(Modifier::DIM)
-    }
-
-    pub fn scrollbar_thumb() -> Style {
-        Style::default().add_modifier(Modifier::BOLD)
-    }
 }
