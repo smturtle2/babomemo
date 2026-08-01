@@ -122,6 +122,7 @@ pub struct App {
     dirty_since: Option<Instant>,
     save_error: Option<String>,
     transient_error: Option<String>,
+    suppressed_repeat: Option<KeyCode>,
     quit: bool,
 }
 
@@ -153,6 +154,7 @@ impl App {
             dirty_since: None,
             save_error: None,
             transient_error: config_error,
+            suppressed_repeat: None,
             quit: false,
         }
     }
@@ -627,9 +629,19 @@ impl App {
     }
 
     fn handle_key(&mut self, key: KeyEvent) {
+        if key.kind == KeyEventKind::Release {
+            if self.suppressed_repeat.as_ref() == Some(&key.code) {
+                self.suppressed_repeat = None;
+            }
+            return;
+        }
         if !matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) {
             return;
         }
+        if key.kind == KeyEventKind::Repeat && self.suppressed_repeat.as_ref() == Some(&key.code) {
+            return;
+        }
+        self.suppressed_repeat = None;
         let control = key.modifiers.contains(KeyModifiers::CONTROL);
         if key.kind == KeyEventKind::Press
             && control
@@ -642,6 +654,21 @@ impl App {
                 }
                 'n' if self.pending.is_none() && !self.settings_open => {
                     self.add_note(AddScroll::Minimal);
+                    return;
+                }
+                _ => {}
+            }
+        }
+        if key.kind == KeyEventKind::Press {
+            match key.code {
+                KeyCode::Enter if self.pending.is_some() => {
+                    self.suppressed_repeat = Some(KeyCode::Enter);
+                    self.confirm_pending();
+                    return;
+                }
+                KeyCode::Esc if self.settings_open => {
+                    self.suppressed_repeat = Some(KeyCode::Esc);
+                    self.close_settings();
                     return;
                 }
                 _ => {}
@@ -852,8 +879,7 @@ impl App {
                         .min(MAX_HEIGHT);
                 }
                 Action::SettingsDone => {
-                    self.settings_open = false;
-                    self.save_config();
+                    self.close_settings();
                 }
                 _ => {}
             }
@@ -866,6 +892,11 @@ impl App {
             Action::Delete(index) => self.pending = Some(Pending::Delete(index)),
             _ => {}
         }
+    }
+
+    fn close_settings(&mut self) {
+        self.settings_open = false;
+        self.save_config();
     }
 
     fn confirm_pending(&mut self) {

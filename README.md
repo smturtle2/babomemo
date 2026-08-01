@@ -89,6 +89,8 @@ The first run creates `.babomemo` in that directory. Running `babomemo` from the
 | --- | --- |
 | <kbd>Ctrl</kbd> + <kbd>N</kbd> | Add a memo |
 | <kbd>Ctrl</kbd> + <kbd>D</kbd> | Save and exit |
+| <kbd>Enter</kbd> | Confirm memo deletion when the confirmation is open |
+| <kbd>Esc</kbd> | Save settings and close the settings window |
 | <kbd>Ctrl</kbd> + <kbd>A</kbd> | Select all text in the focused memo |
 | <kbd>Ctrl</kbd> + <kbd>C</kbd> / <kbd>X</kbd> / <kbd>V</kbd> | Copy / cut / paste |
 | <kbd>Ctrl</kbd> + <kbd>Z</kbd> / <kbd>Y</kbd> | Undo / redo |

@@ -89,6 +89,8 @@ babomemo
 | --- | --- |
 | <kbd>Ctrl</kbd> + <kbd>N</kbd> | 메모 추가 |
 | <kbd>Ctrl</kbd> + <kbd>D</kbd> | 저장 후 종료 |
+| <kbd>Enter</kbd> | 삭제 확인 창에서 메모 삭제 확인 |
+| <kbd>Esc</kbd> | 설정을 저장하고 설정 창 닫기 |
 | <kbd>Ctrl</kbd> + <kbd>A</kbd> | 선택한 메모의 텍스트 전체 선택 |
 | <kbd>Ctrl</kbd> + <kbd>C</kbd> / <kbd>X</kbd> / <kbd>V</kbd> | 복사 / 잘라내기 / 붙여넣기 |
 | <kbd>Ctrl</kbd> + <kbd>Z</kbd> / <kbd>Y</kbd> | 실행 취소 / 다시 실행 |
